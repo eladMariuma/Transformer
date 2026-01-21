@@ -84,3 +84,36 @@ class Seq2SeqTransformer(nn.Module):
 
 def generate_square_subsequent_mask(size: int, device: torch.device) -> torch.Tensor:
     return torch.triu(torch.ones(size, size, device=device) == 1, diagonal=1)
+
+
+class ControlModel(nn.Module):
+    def __init__(self, vocab_size: int, pad_token_id: int, target_length: int) -> None:
+        super().__init__()
+        self.vocab_size = vocab_size
+        self.pad_token_id = pad_token_id
+        self.target_length = target_length
+
+    def forward(self, token_ids: torch.Tensor) -> torch.Tensor:
+        return self.validate_and_correct(token_ids)
+
+    def validate_and_correct(self, token_ids: torch.Tensor) -> torch.Tensor:
+        corrected = token_ids.clone()
+        corrected = torch.where(
+            (corrected >= 0) & (corrected < self.vocab_size),
+            corrected,
+            torch.full_like(corrected, self.pad_token_id),
+        )
+
+        length = corrected.size(1)
+        if length < self.target_length:
+            pad = torch.full(
+                (corrected.size(0), self.target_length - length),
+                self.pad_token_id,
+                device=corrected.device,
+                dtype=corrected.dtype,
+            )
+            corrected = torch.cat([corrected, pad], dim=1)
+        elif length > self.target_length:
+            corrected = corrected[:, : self.target_length]
+
+        return corrected

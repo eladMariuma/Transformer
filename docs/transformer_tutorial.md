@@ -138,6 +138,43 @@ SRC: [2, 1, 9, 3] -> TGT: [3, 9, 1, 2]
 
 ---
 
-## 8) סיכום
+## 8) מודל בקרה לבלוק של 2000 טוקנים
+
+**הסבר:**
+לאחר אימון, אנחנו מייצרים בלוק של **2000 טוקנים בבת אחת** מתוך המודל. מיד אחר כך פועל **מודל בקרה** שמקבל את רצף הטוקנים, מאמת שהוא חוקי (בטווח אוצר המילים ובאורך 2000), ואם לא – מתקן לפי הצורך ומחזיר את הבלוק המתוקן.
+
+**בלוק קוד (מתוך `src/transformer.py`):**
+```python
+class ControlModel(nn.Module):
+    def validate_and_correct(self, token_ids: torch.Tensor) -> torch.Tensor:
+        corrected = token_ids.clone()
+        corrected = torch.where(
+            (corrected >= 0) & (corrected < self.vocab_size),
+            corrected,
+            torch.full_like(corrected, self.pad_token_id),
+        )
+        # תיקון אורך ל-2000
+```
+
+**בלוק קוד (מתוך `src/train.py`):**
+```python
+corrected_block = generate_block_with_control(
+    model,
+    control_model,
+    vocab,
+    rng,
+    device,
+    block_length=2000,
+)
+```
+
+**הקובץ שנוצר:**
+```
+data/generated_block.txt
+```
+
+---
+
+## 9) סיכום
 
 קיבלתם Transformer מלא עם Encoder–Decoder, כולל דאטה, אימון, ו־inference. המודל קטן במכוון, כך שאפשר להריץ מהר ובקלות.

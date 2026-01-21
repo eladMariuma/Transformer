@@ -7,7 +7,12 @@ from torch import nn
 from torch.optim import Adam
 
 from dataset import Batch, Vocab, build_batches, generate_pair
-from transformer import Seq2SeqTransformer, TransformerConfig, generate_square_subsequent_mask
+from transformer import (
+    ControlModel,
+    Seq2SeqTransformer,
+    TransformerConfig,
+    generate_square_subsequent_mask,
+)
 
 
 def set_seed(seed: int) -> None:
@@ -91,6 +96,41 @@ def save_sample_dataset(output_dir: Path, vocab: Vocab, seed: int) -> None:
     (output_dir / "sample_pairs.txt").write_text("\n".join(lines), encoding="utf-8")
 
 
+def generate_block_with_control(
+    model: Seq2SeqTransformer,
+    control_model: ControlModel,
+    vocab: Vocab,
+    rng: np.random.Generator,
+    device: torch.device,
+    block_length: int = 2000,
+) -> torch.Tensor:
+    model.eval()
+    control_model.eval()
+
+    src_numbers = rng.integers(0, vocab.max_token - vocab.offset + 1, size=8)
+    src_tokens = torch.tensor([vocab.encode_numbers(src_numbers.tolist())], device=device)
+    tgt_input = torch.full((1, block_length), vocab.pad, device=device, dtype=src_tokens.dtype)
+    tgt_input[:, 0] = vocab.bos
+
+    src_padding_mask = src_tokens == vocab.pad
+    tgt_padding_mask = tgt_input == vocab.pad
+    tgt_mask = generate_square_subsequent_mask(block_length, device)
+
+    with torch.no_grad():
+        logits = model(
+            src_tokens,
+            tgt_input,
+            src_key_padding_mask=src_padding_mask,
+            tgt_key_padding_mask=tgt_padding_mask,
+            memory_key_padding_mask=src_padding_mask,
+            tgt_mask=tgt_mask,
+        )
+        token_block = torch.argmax(logits, dim=-1)
+        corrected_block = control_model(token_block)
+
+    return corrected_block
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Train a toy encoder-decoder Transformer.")
     parser.add_argument("--epochs", type=int, default=10)
@@ -106,6 +146,11 @@ def main() -> None:
     vocab = Vocab()
     config = TransformerConfig(vocab_size=vocab.size)
     model = Seq2SeqTransformer(config).to(device)
+    control_model = ControlModel(
+        vocab_size=vocab.size,
+        pad_token_id=vocab.pad,
+        target_length=2000,
+    ).to(device)
     optimizer = Adam(model.parameters(), lr=3e-4)
     loss_fn = nn.CrossEntropyLoss(ignore_index=vocab.pad)
 
@@ -131,6 +176,21 @@ def main() -> None:
     print(f"Predicted reversed: {decoded_numbers}")
 
     save_sample_dataset(Path("data"), vocab, args.seed)
+
+    corrected_block = generate_block_with_control(
+        model,
+        control_model,
+        vocab,
+        rng,
+        device,
+        block_length=2000,
+    )
+    block_path = Path("data") / "generated_block.txt"
+    block_path.write_text(
+        " ".join(str(token) for token in corrected_block.squeeze(0).tolist()),
+        encoding="utf-8",
+    )
+    print(f"Generated block saved to {block_path}")
 
 
 if __name__ == "__main__":

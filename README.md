@@ -23,7 +23,10 @@ pip install -r requirements.txt
 python src/train.py --epochs 10 --batch-size 64 --steps 100
 ```
 
-בסיום, התסריט גם ייצור קובץ `data/sample_pairs.txt` עם דוגמאות דאטה.
+בסיום, התסריט גם ייצור קבצים:
+
+- `data/sample_pairs.txt` עם דוגמאות דאטה.
+- `data/generated_block.txt` עם בלוק של 2000 טוקנים שעבר אימות ותיקון על ידי מודל הבקרה.
 
 ## הסבר קצר על הדאטה
 
